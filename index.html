@@ -60,17 +60,23 @@ body{background:var(--bg);color:var(--text);font-family:'Mulish',sans-serif;font
 .cal-dn-row{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:3px}
 .cal-dn{text-align:center;font-size:9px;font-weight:700;letter-spacing:0.5px;color:var(--muted2);padding:3px 0}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
-.cal-cell{background:var(--s1);border-radius:var(--rs);min-height:64px;padding:4px;border:1px solid transparent;cursor:pointer;transition:border-color 0.15s}
+.cal-cell{background:var(--s1);border-radius:var(--rs);min-height:80px;padding:4px;border:1px solid transparent;cursor:pointer;transition:border-color 0.15s;overflow:hidden}
 .cal-cell.empty{background:transparent;cursor:default}
 .cal-cell.today{border-color:var(--accent)}
 .cal-cell.neg{border-color:rgba(255,107,107,0.4);background:rgba(255,107,107,0.04)}
 .cal-cell.first-neg{border-color:var(--warn)!important;background:rgba(255,107,107,0.08)!important}
-.cal-num{font-size:10px;font-weight:700;color:var(--muted);margin-bottom:2px}
+.cal-num{font-size:10px;font-weight:700;color:var(--muted);margin-bottom:1px}
 .cal-cell.today .cal-num{color:var(--accent)}
 .cal-cell.first-neg .cal-num{color:var(--warn)}
-.cal-bal{font-family:'Syne Mono',monospace;font-size:9px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cal-dots{display:flex;flex-wrap:wrap;gap:2px}
-.cdot{width:5px;height:5px;border-radius:50%}
+.cal-bal{font-family:'Syne Mono',monospace;font-size:8px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-day-delta{font-family:'Syne Mono',monospace;font-size:8px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-items{display:flex;flex-direction:column;gap:1px}
+.cal-item{font-size:8px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 3px;border-radius:3px;cursor:pointer;line-height:1.4}
+.cal-item.income{background:rgba(77,255,160,0.12);color:var(--income)}
+.cal-item.expense{background:rgba(255,107,107,0.12);color:var(--expense)}
+.cal-item.savings{background:rgba(77,195,255,0.12);color:var(--savings)}
+.cal-item.investment{background:rgba(176,107,255,0.12);color:var(--investment)}
+.cal-more{font-size:8px;color:var(--muted);padding-top:1px}
 
 /* LIST */
 .filter-row{display:flex;gap:5px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px}
@@ -181,6 +187,22 @@ body{background:var(--bg);color:var(--text);font-family:'Mulish',sans-serif;font
 /* completion accent stripe */
 .fund-card.complete{border-color:rgba(77,255,160,0.4)}
 .fund-card.complete .fund-bar-fill{background:var(--accent)!important}
+
+/* fund action buttons */
+.fund-actions{display:flex;gap:6px;padding:0 14px 13px}
+.fund-action-btn{flex:1;padding:9px;border-radius:var(--rs);font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;border:1px solid;transition:opacity 0.15s}
+.fund-action-btn:active{opacity:0.75}
+.fund-add-btn{background:rgba(77,255,160,0.1);color:var(--accent);border-color:rgba(77,255,160,0.3)}
+.fund-sub-btn{background:rgba(255,107,107,0.1);color:var(--warn);border-color:rgba(255,107,107,0.3)}
+
+/* fund history */
+.fund-history{border-top:1px solid var(--border);padding:10px 14px}
+.fund-history-title{font-size:9px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.fund-history-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px}
+.fund-history-row:last-child{border-bottom:none}
+.fund-history-date{color:var(--muted);font-size:10px;min-width:55px}
+.fund-history-note{flex:1;padding:0 8px;color:var(--muted)}
+.fund-history-amt{font-family:'Syne Mono',monospace;font-size:11px}
 
 /* ═══════════════════════════════════════════
    PROJECTION TAB
@@ -616,6 +638,29 @@ select option{background:#151a24}
   </div>
 </div>
 
+<!-- ═══ FUND MOVEMENT MODAL ═══ -->
+<div class="overlay" id="fundmove-overlay">
+  <div class="modal">
+    <div class="modal-hd">
+      <div class="modal-title" id="fundmove-title">Add Funds</div>
+      <button class="mclose" onclick="closeOverlay('fundmove-overlay')">×</button>
+    </div>
+    <div class="fgroup">
+      <label class="flabel">Amount ($)</label>
+      <input class="finput" type="number" id="fm-amount" placeholder="0.00" step="0.01" inputmode="decimal">
+    </div>
+    <div class="fgroup">
+      <label class="flabel">Date</label>
+      <input class="finput" type="date" id="fm-date">
+    </div>
+    <div class="fgroup">
+      <label class="flabel">Note (optional)</label>
+      <input class="finput" type="text" id="fm-note" placeholder="e.g. Monthly deposit, Birthday gift…">
+    </div>
+    <button class="savebtn" id="fundmove-savebtn" onclick="saveFundMove()">Add Funds</button>
+  </div>
+</div>
+
 <!-- ═══ DAY DETAIL MODAL ═══ -->
 <div class="overlay" id="day-overlay">
   <div class="modal">
@@ -797,7 +842,25 @@ function renderCal(){
     if(isToday)cell.classList.add('today');
     if(bal<0&&d===firstNeg)cell.classList.add('first-neg');
     else if(bal<0)cell.classList.add('neg');
-    cell.innerHTML=`<div class="cal-num">${d}</div><div class="cal-bal" style="color:${bal>=0?'var(--income)':'var(--warn)'}">${fmt(bal,true)}</div><div class="cal-dots">${dayOccs.slice(0,4).map(o=>`<div class="cdot" style="background:${COLORS_MAP[o.type]}"></div>`).join('')}</div>`;
+
+    // Calculate day delta (net change this day)
+    const dayIn=dayOccs.filter(o=>o.type==='income').reduce((a,o)=>a+o.amount,0);
+    const dayOut=dayOccs.filter(o=>o.type!=='income').reduce((a,o)=>a+o.amount,0);
+    const delta=dayIn-dayOut;
+    const deltaStr=delta===0?'':(delta>0?`+${fmt(delta,true)}`:`${fmt(delta,true)}`);
+    const deltaColor=delta>0?'var(--income)':delta<0?'var(--expense)':'var(--muted)';
+
+    const visItems=dayOccs.slice(0,3);
+    const moreCount=dayOccs.length-3;
+
+    cell.innerHTML=`
+      <div class="cal-num">${d}</div>
+      <div class="cal-bal" style="color:${bal>=0?'var(--income)':'var(--warn)'}">${fmt(bal,true)}</div>
+      ${deltaStr?`<div class="cal-day-delta" style="color:${deltaColor}">${deltaStr}</div>`:''}
+      <div class="cal-items">
+        ${visItems.map(o=>`<div class="cal-item ${o.type}" onclick="event.stopPropagation();openTxDetail('${o.srcId}')">${o.name}</div>`).join('')}
+        ${moreCount>0?`<div class="cal-more">+${moreCount} more</div>`:''}
+      </div>`;
     cell.onclick=()=>openDayModal(d,ds,dayOccs,bal);
     grid.appendChild(cell);
   }
@@ -945,17 +1008,10 @@ function renderSavings(){
     const monthsLeft=f.contribution>0?Math.ceil(remaining/f.contribution):null;
     const projDate=monthsLeft!=null?projectedDate(monthsLeft):null;
     const isComplete=f.balance>=f.goal;
+    const history=(f.history||[]).slice(-5).reverse();
 
-    let targetInfo='';
-    if(f.targetDate){
-      const td=new Date(f.targetDate+'T00:00:00');
-      const today=new Date(); today.setHours(0,0,0,0);
-      const daysLeft=Math.ceil((td-today)/86400000);
-      targetInfo=daysLeft>0?`${daysLeft}d to target`:'Target date passed';
-    }
-
-    return `<div class="fund-card${isComplete?' complete':''}" onclick="openFundModal('${f.id}')">
-      <div class="fund-top">
+    return `<div class="fund-card${isComplete?' complete':''}">
+      <div class="fund-top" onclick="openFundModal('${f.id}')">
         <div class="fund-head">
           <div class="fund-head-left">
             <div class="fund-emoji">${f.emoji||'🎯'}</div>
@@ -973,6 +1029,18 @@ function renderSavings(){
           <span style="text-align:right"><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:0.8px;font-weight:700">${f.targetDate?'Target':'Est. Done'}</div><strong>${isComplete?'—':f.targetDate?fmtDate(f.targetDate):projDate||'—'}</strong></span>
         </div>
       </div>
+      <div class="fund-actions">
+        <button class="fund-action-btn fund-add-btn" onclick="openFundMove('${f.id}','add')">+ Deposit</button>
+        <button class="fund-action-btn fund-sub-btn" onclick="openFundMove('${f.id}','subtract')">− Withdraw</button>
+      </div>
+      ${history.length?`<div class="fund-history">
+        <div class="fund-history-title">Recent Activity</div>
+        ${history.map(h=>`<div class="fund-history-row">
+          <div class="fund-history-date">${fmtDate(h.date)}</div>
+          <div class="fund-history-note">${h.note||'—'}</div>
+          <div class="fund-history-amt" style="color:${h.type==='add'?'var(--accent)':'var(--warn)'}">${h.type==='add'?'+':'-'}${fmt(h.amount,true)}</div>
+        </div>`).join('')}
+      </div>`:''}
     </div>`;
   }).join('');
 }
@@ -981,6 +1049,46 @@ function projectedDate(months){
   const d=new Date();
   d.setMonth(d.getMonth()+months);
   return d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FUND MOVEMENTS
+// ═══════════════════════════════════════════════════════════════════
+let fundMoveId=null, fundMoveType='add';
+function openFundMove(id,type){
+  fundMoveId=id; fundMoveType=type;
+  const f=funds.find(x=>x.id===id)||{};
+  document.getElementById('fundmove-title').textContent=type==='add'?`Deposit into ${f.name}`:`Withdraw from ${f.name}`;
+  document.getElementById('fundmove-savebtn').textContent=type==='add'?'Add Funds':'Withdraw Funds';
+  document.getElementById('fm-amount').value='';
+  document.getElementById('fm-date').value=todayStr();
+  document.getElementById('fm-note').value='';
+  openOverlay('fundmove-overlay');
+}
+function saveFundMove(){
+  const amount=parseFloat(document.getElementById('fm-amount').value);
+  const date=document.getElementById('fm-date').value;
+  const note=document.getElementById('fm-note').value.trim();
+  if(!amount||amount<=0){alert('Enter a valid amount.');return;}
+  const idx=funds.findIndex(f=>f.id===fundMoveId);
+  if(idx<0)return;
+  const f=funds[idx];
+  if(!f.history)f.history=[];
+  if(fundMoveType==='add'){
+    f.balance=(f.balance||0)+amount;
+  } else {
+    f.balance=Math.max(0,(f.balance||0)-amount);
+  }
+  f.history.push({id:uid(),date,amount,type:fundMoveType,note});
+  persist(); closeOverlay('fundmove-overlay'); render();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TRANSACTION DETAIL (from calendar item tap)
+// ═══════════════════════════════════════════════════════════════════
+function openTxDetail(srcId){
+  const t=txns.find(x=>x.id===srcId); if(!t)return;
+  openEdit(srcId);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1314,10 +1422,32 @@ function deleteFund(){
 function openDayModal(day,ds,occs,bal){
   const d=new Date(ds+'T00:00:00');
   document.getElementById('day-dt').textContent=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-  document.getElementById('day-bal').textContent=`Running balance: ${fmt(bal)}`;
+
+  const dayIn=occs.filter(o=>o.type==='income').reduce((a,o)=>a+o.amount,0);
+  const dayOut=occs.filter(o=>o.type!=='income').reduce((a,o)=>a+o.amount,0);
+  const delta=dayIn-dayOut;
+  const deltaStr=delta===0?'No change':(delta>0?`+${fmt(delta)} today`:`${fmt(delta)} today`);
+  document.getElementById('day-bal').textContent=`Balance: ${fmt(bal)} · ${deltaStr}`;
+
   const list=document.getElementById('day-list');
-  if(!occs.length){list.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No transactions this day</div>';}
-  else{list.innerHTML=occs.map(o=>`<div class="txrow" onclick="openEdit('${o.srcId}')"><div class="tx-ico ${o.type}">${ICONS[o.type]}</div><div class="tx-body"><div class="tx-name">${o.name}</div><div class="tx-sub">${o.category||'No category'}</div></div><div class="tx-amt" style="color:${COLORS_MAP[o.type]}">${o.type==='income'?'+':'-'}${fmt(o.amount)}</div></div>`).join('');}
+  if(!occs.length){
+    list.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No transactions this day</div>';
+  } else {
+    list.innerHTML=occs.map(o=>{
+      const src=txns.find(t=>t.id===o.srcId)||{};
+      const isRec=src.recurrence&&src.recurrence!=='once'&&src.recurrence!=='installment';
+      const isInst=src.recurrence==='installment';
+      return `<div class="txrow${isInst?' inst':isRec?' rec':''}" onclick="openEdit('${o.srcId}')">
+        <div class="tx-ico ${o.type}">${ICONS[o.type]}</div>
+        <div class="tx-body">
+          <div class="tx-name">${o.name}</div>
+          <div class="tx-sub">${o.category||'No category'}${o.notes?' · '+o.notes:''}</div>
+          ${isInst?'<div class="tx-badge badge-inst" style="margin-top:3px">INSTALLMENT</div>':isRec?`<div class="tx-badge badge-rec" style="margin-top:3px">${src.recurrence.toUpperCase()}</div>`:''}
+        </div>
+        <div class="tx-amt" style="color:${COLORS_MAP[o.type]}">${o.type==='income'?'+':'-'}${fmt(o.amount)}</div>
+      </div>`;
+    }).join('');
+  }
   openOverlay('day-overlay');
 }
 
