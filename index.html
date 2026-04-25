@@ -25,7 +25,7 @@ body{background:var(--bg);color:var(--text);font-family:'Mulish',sans-serif;font
 
 /* TOPBAR */
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:90;background:var(--bg);gap:8px}
-.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:19px;letter-spacing:-1px;color:var(--accent);flex-shrink:0}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:14px;letter-spacing:-0.5px;color:var(--accent);flex-shrink:0}
 .logo span{color:var(--muted);font-weight:400}
 .tabs{display:flex;gap:2px;background:var(--s2);padding:3px;border-radius:10px;border:1px solid var(--border);overflow-x:auto;flex:1}
 .tabs::-webkit-scrollbar{display:none}
@@ -312,9 +312,9 @@ select option{background:#151a24}
 <body>
 
 <div class="topbar">
-  <div class="logo">flow<span>.</span></div>
+  <div class="logo">Budget Tracker</div>
   <div class="tabs">
-    <button class="tab active" onclick="gotoView('calendar')">Cal</button>
+    <button class="tab active" onclick="gotoView('calendar')">Calendar</button>
     <button class="tab" onclick="gotoView('list')">List</button>
     <button class="tab" onclick="gotoView('budget')">Budget</button>
     <button class="tab" onclick="gotoView('savings')">Savings</button>
@@ -688,7 +688,7 @@ select option{background:#151a24}
       <button class="mclose" onclick="closeOverlay('day-overlay')">×</button>
     </div>
     <div class="day-list-scroll" id="day-list"></div>
-    <button class="savebtn" style="margin-top:14px" onclick="closeOverlay('day-overlay');openAdd()">+ Add Transaction</button>
+    <button class="savebtn" style="margin-top:14px" onclick="closeOverlay('day-overlay');openAdd(_selectedDayDate)">+ Add Transaction</button>
   </div>
 </div>
 
@@ -1601,7 +1601,9 @@ function deleteFund(){
 // ═══════════════════════════════════════════════════════════════════
 // DAY MODAL
 // ═══════════════════════════════════════════════════════════════════
+let _selectedDayDate=null;
 function openDayModal(day,ds,occs,bal){
+  _selectedDayDate=ds;
   const d=new Date(ds+'T00:00:00');
   document.getElementById('day-dt').textContent=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
 
