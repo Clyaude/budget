@@ -200,6 +200,8 @@ body{background:var(--bg);color:var(--text);font-family:'Mulish',sans-serif;font
 .fund-history-title{font-size:9px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
 .fund-history-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px}
 .fund-history-row:last-child{border-bottom:none}
+.fund-history-rows{display:none}
+.fund-history-rows.open{display:block}
 .fund-history-date{color:var(--muted);font-size:10px;min-width:55px}
 .fund-history-note{flex:1;padding:0 8px;color:var(--muted)}
 .fund-history-amt{font-family:'Syne Mono',monospace;font-size:11px}
@@ -546,15 +548,26 @@ select option{background:#151a24}
       <label class="flabel">Bill Name</label>
       <input class="finput" type="text" id="b-name" placeholder="Rent, Netflix, Car insurance…">
     </div>
-    <div class="frow2">
-      <div class="fgroup">
-        <label class="flabel">Amount ($)</label>
-        <input class="finput" type="number" id="b-amount" placeholder="0.00" step="0.01" inputmode="decimal">
+    <div class="fgroup">
+      <label class="flabel">Amount ($)</label>
+      <input class="finput" type="number" id="b-amount" placeholder="0.00" step="0.01" inputmode="decimal">
+    </div>
+    <div class="fgroup">
+      <label class="flabel">Due Date Type</label>
+      <div class="rec-sel" style="grid-template-columns:1fr 1fr 1fr">
+        <button class="rbtn sel" onclick="selBillType('day',this)">Specific Day</button>
+        <button class="rbtn" onclick="selBillType('lastweekday',this)">Last Weekday</button>
+        <button class="rbtn" onclick="selBillType('biweekly',this)">Every Other Friday</button>
       </div>
-      <div class="fgroup">
-        <label class="flabel">Day of month due</label>
-        <input class="finput" type="number" id="b-day" placeholder="e.g. 1" min="1" max="31" inputmode="numeric">
-      </div>
+    </div>
+    <div id="b-day-group" class="fgroup">
+      <label class="flabel">Day of month</label>
+      <input class="finput" type="number" id="b-day" placeholder="e.g. 1" min="1" max="31" inputmode="numeric">
+    </div>
+    <div id="b-biweekly-group" class="fgroup" style="display:none">
+      <label class="flabel">Next occurrence date</label>
+      <input class="finput" type="date" id="b-biweekly-start">
+      <div style="margin-top:4px;font-size:11px;color:var(--muted)">Pick the next Friday this bill is due — the app will repeat every 2 weeks from there</div>
     </div>
     <div class="fgroup">
       <label class="flabel">Icon</label>
@@ -767,11 +780,87 @@ function monthTotals(occs){
   occs.forEach(o=>t[o.type]+=o.amount);
   return t;
 }
+
+// ── Bill due date calculators ──
+function lastWeekdayOfMonth(y,m){
+  let d=new Date(y,m+1,0); // last day of month
+  while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()-1);
+  return d.getDate();
+}
+function billDueDateInMonth(bill,y,m){
+  if(bill.duetype==='lastweekday') return lastWeekdayOfMonth(y,m);
+  if(bill.duetype==='biweekly'){
+    // find all biweekly Fridays in this month from anchor
+    if(!bill.biweeklyStart) return null;
+    const anchor=new Date(bill.biweeklyStart+'T00:00:00');
+    const monthStart=new Date(y,m,1), monthEnd=new Date(y,m+1,0);
+    let cursor=new Date(anchor);
+    const dates=[];
+    while(cursor<=monthEnd){
+      if(cursor>=monthStart) dates.push(cursor.getDate());
+      cursor.setDate(cursor.getDate()+14);
+    }
+    return dates.length>0?dates:null; // may return array of multiple dates
+  }
+  // specific day
+  const dim=new Date(y,m+1,0).getDate();
+  return Math.min(bill.day||1,dim);
+}
+
+// ── Expand bills into occurrences for a date range ──
+function expandBills(fromDate,toDate){
+  const from=new Date(fromDate+'T00:00:00'), to=new Date(toDate+'T00:00:00');
+  const result=[];
+  bills.forEach(b=>{
+    // iterate months in range
+    let cy=from.getFullYear(), cm=from.getMonth();
+    const endY=to.getFullYear(), endM=to.getMonth();
+    while(cy<endY||(cy===endY&&cm<=endM)){
+      const due=billDueDateInMonth(b,cy,cm);
+      const addOcc=(day)=>{
+        if(!day)return;
+        const ds=dStr(cy,cm,day);
+        const dd=new Date(ds+'T00:00:00');
+        if(dd>=from&&dd<=to) result.push({date:ds,name:b.name,type:'expense',amount:b.amount,category:'Fixed Bill',notes:'',srcId:'bill_'+b.id,isBill:true,isProj:true});
+      };
+      if(Array.isArray(due)) due.forEach(addOcc);
+      else addOcc(due);
+      cm++; if(cm>11){cm=0;cy++;}
+    }
+  });
+  return result;
+}
+
+// ── Expand category limits as end-of-month expenses ──
+function expandCatLimits(fromDate,toDate){
+  const from=new Date(fromDate+'T00:00:00'), to=new Date(toDate+'T00:00:00');
+  const result=[];
+  catLimits.forEach(cl=>{
+    let cy=from.getFullYear(), cm=from.getMonth();
+    const endY=to.getFullYear(), endM=to.getMonth();
+    while(cy<endY||(cy===endY&&cm<=endM)){
+      const lastDay=new Date(cy,cm+1,0).getDate();
+      const ds=dStr(cy,cm,lastDay);
+      const dd=new Date(ds+'T00:00:00');
+      if(dd>=from&&dd<=to) result.push({date:ds,name:cl.category+' (budget limit)',type:'expense',amount:cl.limit,category:cl.category,notes:'Projected',srcId:'catl_'+cl.id,isCatLimit:true,isProj:true});
+      cm++; if(cm>11){cm=0;cy++;}
+    }
+  });
+  return result;
+}
+
 function balanceAt(date){
   const all=expandAll('2000-01-01',date);
+  const billOccs=expandBills('2000-01-01',date);
+  const catOccs=expandCatLimits('2000-01-01',date);
   let bal=0;
-  all.forEach(t=>t.type==='income'?bal+=t.amount:bal-=t.amount);
+  [...all,...billOccs,...catOccs].forEach(t=>t.type==='income'?bal+=t.amount:bal-=t.amount);
   return bal;
+}
+
+// expanded with budget for projection
+function expandAllWithBudget(fromDate,toDate){
+  return [...expandAll(fromDate,toDate),...expandBills(fromDate,toDate),...expandCatLimits(fromDate,toDate)].sort((a,b)=>a.date.localeCompare(b.date));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -937,19 +1026,26 @@ function renderBudget(){
   if(!bills.length){
     billsEl.innerHTML='<div class="empty-state" style="padding:20px"><div class="ei">📋</div><p>No fixed bills yet</p></div>';
   } else {
-    const dim=new Date(curY,curM+1,0).getDate();
+    const todayDs=todayStr();
     billsEl.innerHTML=bills.map(b=>{
-      const dueDs=dStr(curY,curM,Math.min(b.day,dim));
-      const todayDs=todayStr();
+      // Get due date(s) this month
+      const due=billDueDateInMonth(b,curY,curM);
+      const dueDates=Array.isArray(due)?due:(due?[due]:[]);
+      const dueDsArr=dueDates.map(d=>dStr(curY,curM,d));
+      const primaryDs=dueDsArr[0]||null;
       const monthTxn=occs.find(o=>o.type==='expense'&&o.srcId&&txns.find(t=>t.id===o.srcId&&t.name===b.name));
       const paid=!!monthTxn;
-      const overdue=!paid&&dueDs<todayDs;
-      const status=paid?'paid':overdue?'overdue':'due';
-      const statusLabel=paid?'Paid':overdue?'Overdue':`Due ${fmtDate(dueDs)}`;
+      const overdue=!paid&&primaryDs&&primaryDs<todayDs;
+      const statusLabel=paid?'Paid':overdue?'Overdue':primaryDs?`Due ${fmtDate(primaryDs)}`:'—';
       const statusClass=paid?'bill-paid':overdue?'bill-overdue':'bill-due';
+      // human label for schedule
+      let schedLabel='';
+      if(b.duetype==='lastweekday') schedLabel='Last weekday of month';
+      else if(b.duetype==='biweekly') schedLabel='Every other Friday';
+      else schedLabel=`${b.day}${ordinal(b.day||1)} of month`;
       return `<div class="bill-row" onclick="openBillModal('${b.id}')">
         <div class="bill-top">
-          <div class="bill-left"><div class="bill-ico">${b.emoji||'💳'}</div><div><div class="bill-name">${b.name}</div><div class="bill-day">Due ${b.day}${ordinal(b.day)} of month</div></div></div>
+          <div class="bill-left"><div class="bill-ico">${b.emoji||'💳'}</div><div><div class="bill-name">${b.name}</div><div class="bill-day">${schedLabel}</div></div></div>
           <div class="bill-right"><div class="bill-amt">${fmt(b.amount)}</div><div class="bill-status ${statusClass}">${statusLabel}</div></div>
         </div>
         <div class="bill-bar-track"><div class="bill-bar-fill" style="width:${paid?100:0}%;background:${paid?'var(--accent)':'var(--s4)'}"></div></div>
@@ -1034,12 +1130,16 @@ function renderSavings(){
         <button class="fund-action-btn fund-sub-btn" onclick="openFundMove('${f.id}','subtract')">− Withdraw</button>
       </div>
       ${history.length?`<div class="fund-history">
-        <div class="fund-history-title">Recent Activity</div>
-        ${history.map(h=>`<div class="fund-history-row">
-          <div class="fund-history-date">${fmtDate(h.date)}</div>
-          <div class="fund-history-note">${h.note||'—'}</div>
-          <div class="fund-history-amt" style="color:${h.type==='add'?'var(--accent)':'var(--warn)'}">${h.type==='add'?'+':'-'}${fmt(h.amount,true)}</div>
-        </div>`).join('')}
+        <div class="fund-history-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="this.parentElement.querySelector('.fund-history-rows').classList.toggle('open');this.querySelector('.fh-arrow').textContent=this.parentElement.querySelector('.fund-history-rows').classList.contains('open')?'▲':'▼'">
+          <span>Recent Activity (${(f.history||[]).length})</span><span class="fh-arrow">▼</span>
+        </div>
+        <div class="fund-history-rows" style="display:none">
+          ${history.map(h=>`<div class="fund-history-row">
+            <div class="fund-history-date">${fmtDate(h.date)}</div>
+            <div class="fund-history-note">${h.note||'—'}</div>
+            <div class="fund-history-amt" style="color:${h.type==='add'?'var(--accent)':'var(--warn)'}">${h.type==='add'?'+':'-'}${fmt(h.amount,true)}</div>
+          </div>`).join('')}
+        </div>
       </div>`:''}
     </div>`;
   }).join('');
@@ -1099,7 +1199,7 @@ function renderProjection(){
   const startStr=dStr(today.getFullYear(),today.getMonth(),1);
   const endDate=new Date(today); endDate.setMonth(endDate.getMonth()+12);
   const endStr=dStr(endDate.getFullYear(),endDate.getMonth(),new Date(endDate.getFullYear(),endDate.getMonth()+1,0).getDate());
-  const allOccs=expandAll(startStr,endStr);
+  const allOccs=expandAllWithBudget(startStr,endStr);
 
   // Day-by-day balance
   const days=[];
@@ -1289,21 +1389,33 @@ function buildEmojiGrid(gridId,emojis,selVar,onSel){
   grid.innerHTML=emojis.map(e=>`<div class="epick${window[selVar]===e?' sel':''}" onclick="(${onSel})('${e}',this)">${e}</div>`).join('');
 }
 
+let selBillDueType='day';
+function selBillType(type,btn){
+  selBillDueType=type;
+  document.querySelectorAll('#bill-overlay .rbtn').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');
+  document.getElementById('b-day-group').style.display=type==='day'?'block':'none';
+  document.getElementById('b-biweekly-group').style.display=type==='biweekly'?'block':'none';
+}
+
 function openBillModal(id){
   editBillId=id||null;
-  selBillEmoji=id?bills.find(b=>b.id===id)?.emoji||'💳':'💳';
+  const b=id?bills.find(x=>x.id===id)||{}:{};
+  selBillEmoji=b.emoji||'💳';
+  selBillDueType=b.duetype||'day';
   document.getElementById('bill-modal-ttl').textContent=id?'Edit Bill':'Add Fixed Bill';
   document.getElementById('bill-delbtn').style.display=id?'block':'none';
-  if(id){
-    const b=bills.find(x=>x.id===id)||{};
-    document.getElementById('b-name').value=b.name||'';
-    document.getElementById('b-amount').value=b.amount||'';
-    document.getElementById('b-day').value=b.day||'';
-  } else {
-    document.getElementById('b-name').value='';
-    document.getElementById('b-amount').value='';
-    document.getElementById('b-day').value='';
-  }
+  document.getElementById('b-name').value=b.name||'';
+  document.getElementById('b-amount').value=b.amount||'';
+  document.getElementById('b-day').value=b.day||'';
+  document.getElementById('b-biweekly-start').value=b.biweeklyStart||'';
+  // reset type buttons
+  document.querySelectorAll('#bill-overlay .rbtn').forEach(btn=>{
+    const oc=btn.getAttribute('onclick')||'';
+    btn.classList.toggle('sel', oc.includes(`'${selBillDueType}'`));
+  });
+  document.getElementById('b-day-group').style.display=selBillDueType==='day'?'block':'none';
+  document.getElementById('b-biweekly-group').style.display=selBillDueType==='biweekly'?'block':'none';
   buildEmojiGrid('bill-emoji-grid',BILL_EMOJIS,'selBillEmoji','selBillEmojiF');
   openOverlay('bill-overlay');
 }
@@ -1315,9 +1427,17 @@ function selBillEmojiF(e,el){
 function saveBill(){
   const name=document.getElementById('b-name').value.trim();
   const amount=parseFloat(document.getElementById('b-amount').value);
-  const day=parseInt(document.getElementById('b-day').value);
-  if(!name||!amount||!day){alert('Fill in all fields.');return;}
-  const bill={id:editBillId||uid(),name,amount,day,emoji:selBillEmoji};
+  if(!name||!amount){alert('Enter a name and amount.');return;}
+  let bill={id:editBillId||uid(),name,amount,emoji:selBillEmoji,duetype:selBillDueType};
+  if(selBillDueType==='day'){
+    const day=parseInt(document.getElementById('b-day').value);
+    if(!day){alert('Enter a day of month.');return;}
+    bill.day=day;
+  } else if(selBillDueType==='biweekly'){
+    const start=document.getElementById('b-biweekly-start').value;
+    if(!start){alert('Pick a start date.');return;}
+    bill.biweeklyStart=start;
+  }
   if(editBillId){const i=bills.findIndex(b=>b.id===editBillId);if(i>=0)bills[i]=bill;}
   else bills.push(bill);
   persist(); closeOverlay('bill-overlay'); render();
