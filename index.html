@@ -321,7 +321,10 @@ select option{background:#151a24}
     <button class="tab" onclick="gotoView('projection')">Forecast</button>
     <button class="tab" onclick="gotoView('history')">History</button>
   </div>
-  <button class="export-btn" onclick="exportCSV()">↓</button>
+  <div style="display:flex;gap:6px;flex-shrink:0">
+    <button class="export-btn" onclick="exportCSV()">↓</button>
+    <button class="export-btn" onclick="openSettings()" style="font-size:14px">⚙️</button>
+  </div>
 </div>
 
 <!-- ═══ CALENDAR ═══ -->
@@ -689,6 +692,31 @@ select option{background:#151a24}
   </div>
 </div>
 
+<!-- ═══ SETTINGS MODAL ═══ -->
+<div class="overlay" id="settings-overlay">
+  <div class="modal">
+    <div class="modal-hd">
+      <div class="modal-title">Settings</div>
+      <button class="mclose" onclick="closeOverlay('settings-overlay')">×</button>
+    </div>
+    <div style="background:var(--s2);border-radius:var(--r);padding:14px;border:1px solid var(--border);margin-bottom:16px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Opening Balance</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Set your account balance on your start date. All calculations begin from here.</div>
+      <div class="frow2">
+        <div class="fgroup" style="margin-bottom:0">
+          <label class="flabel">Start Date</label>
+          <input class="finput" type="date" id="set-startdate">
+        </div>
+        <div class="fgroup" style="margin-bottom:0">
+          <label class="flabel">Opening Balance ($)</label>
+          <input class="finput" type="number" id="set-openbal" placeholder="e.g. 3500.00" step="0.01" inputmode="decimal">
+        </div>
+      </div>
+    </div>
+    <button class="savebtn" onclick="saveSettings()">Save Settings</button>
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════════════════════════
 // DATA
@@ -697,15 +725,22 @@ let txns       = JSON.parse(localStorage.getItem('flow_txns_v2')   || '[]');
 let bills      = JSON.parse(localStorage.getItem('flow_bills_v1')  || '[]');
 let catLimits  = JSON.parse(localStorage.getItem('flow_catl_v1')   || '[]');
 let funds      = JSON.parse(localStorage.getItem('flow_funds_v1')  || '[]');
+let settings   = JSON.parse(localStorage.getItem('flow_settings_v1') || '{"startDate":"2025-07-01","openingBalance":0}');
 
 function persist(){
   localStorage.setItem('flow_txns_v2', JSON.stringify(txns));
   localStorage.setItem('flow_bills_v1', JSON.stringify(bills));
   localStorage.setItem('flow_catl_v1', JSON.stringify(catLimits));
   localStorage.setItem('flow_funds_v1', JSON.stringify(funds));
+  localStorage.setItem('flow_settings_v1', JSON.stringify(settings));
 }
 
-let curView='calendar', curY=new Date().getFullYear(), curM=new Date().getMonth();
+let curView='calendar';
+const _initStart=JSON.parse(localStorage.getItem('flow_settings_v1')||'{"startDate":"2025-07-01"}').startDate||'2025-07-01';
+let curY=parseInt(_initStart.slice(0,4)), curM=parseInt(_initStart.slice(5,7))-1;
+// If today is after start, show today's month
+const _today=new Date();
+if(_today.getFullYear()>curY||(_today.getFullYear()===curY&&_today.getMonth()>=curM)){curY=_today.getFullYear();curM=_today.getMonth();}
 let listFilter='all', editId=null, selTypeVal='expense', selRecVal='once';
 let editBillId=null, editCatLId=null, editFundId=null;
 let selBillEmoji='💳', selCatEmoji='📦', selFundEmoji='🎯';
@@ -850,17 +885,23 @@ function expandCatLimits(fromDate,toDate){
 }
 
 function balanceAt(date){
-  const all=expandAll('2000-01-01',date);
-  const billOccs=expandBills('2000-01-01',date);
-  const catOccs=expandCatLimits('2000-01-01',date);
-  let bal=0;
+  const startDate=settings.startDate||'2025-07-01';
+  const openingBalance=parseFloat(settings.openingBalance)||0;
+  // Only count transactions on or after the start date
+  const all=expandAll(startDate,date);
+  const billOccs=expandBills(startDate,date);
+  const catOccs=expandCatLimits(startDate,date);
+  let bal=openingBalance;
   [...all,...billOccs,...catOccs].forEach(t=>t.type==='income'?bal+=t.amount:bal-=t.amount);
   return bal;
 }
 
 // expanded with budget for projection
 function expandAllWithBudget(fromDate,toDate){
-  return [...expandAll(fromDate,toDate),...expandBills(fromDate,toDate),...expandCatLimits(fromDate,toDate)].sort((a,b)=>a.date.localeCompare(b.date));
+  // Never look before start date
+  const startDate=settings.startDate||'2025-07-01';
+  const effectiveFrom=fromDate>startDate?fromDate:startDate;
+  return [...expandAll(effectiveFrom,toDate),...expandBills(effectiveFrom,toDate),...expandCatLimits(effectiveFrom,toDate)].sort((a,b)=>a.date.localeCompare(b.date));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -880,7 +921,24 @@ function gotoView(v){
 }
 function cMonth(d){
   curM+=d; if(curM>11){curM=0;curY++;} if(curM<0){curM=11;curY--;}
+  // Clamp to start date
+  const startDate=settings.startDate||'2025-07-01';
+  const sy=parseInt(startDate.slice(0,4)), sm=parseInt(startDate.slice(5,7))-1;
+  if(curY<sy||(curY===sy&&curM<sm)){curY=sy;curM=sm;}
   render();
+}
+
+function openSettings(){
+  document.getElementById('set-startdate').value=settings.startDate||'2025-07-01';
+  document.getElementById('set-openbal').value=settings.openingBalance||'';
+  openOverlay('settings-overlay');
+}
+function saveSettings(){
+  const startDate=document.getElementById('set-startdate').value;
+  const openingBalance=parseFloat(document.getElementById('set-openbal').value)||0;
+  if(!startDate){alert('Please pick a start date.');return;}
+  settings={startDate,openingBalance};
+  persist(); closeOverlay('settings-overlay'); render();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1286,10 +1344,14 @@ function toggleProjM(el){ el.nextElementSibling.classList.toggle('open'); }
 // HISTORY
 // ═══════════════════════════════════════════════════════════════════
 function renderHistory(){
+  const startDate=settings.startDate||'2025-07-01';
+  const sy=parseInt(startDate.slice(0,4)), sm=parseInt(startDate.slice(5,7))-1;
   const ms=new Set();
   txns.forEach(t=>{const d=new Date(t.date+'T00:00:00');ms.add(`${d.getFullYear()}-${d.getMonth()}`)});
   ms.add(`${curY}-${curM}`);
-  const months=[...ms].map(k=>{const[y,m]=k.split('-').map(Number);return{y,m};}).sort((a,b)=>a.y-b.y||a.m-b.m).slice(-12);
+  const months=[...ms].map(k=>{const[y,m]=k.split('-').map(Number);return{y,m};})
+    .filter(({y,m})=>y>sy||(y===sy&&m>=sm))
+    .sort((a,b)=>a.y-b.y||a.m-b.m).slice(-12);
   const maxInc=Math.max(...months.map(({y,m})=>monthTotals(monthOccs(y,m)).income),1);
   document.getElementById('hist-chart').innerHTML=months.map(({y,m})=>{
     const t=monthTotals(monthOccs(y,m)),sc=v=>Math.max(2,(v/maxInc)*68);
